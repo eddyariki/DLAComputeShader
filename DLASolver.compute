@@ -1,0 +1,68 @@
+﻿#pragma kernel DLASolver
+
+//Particle Data 
+struct Particle {
+    float3 position;
+    float radius;
+    float sign; //-1 means inside (static)
+};
+
+
+//DLA particle that is free to move 
+RWStructuredBuffer<Particle> particleBuffer;
+
+//Variables set from CPU
+float pullStrength; //The attractive force
+float randomStrength; //The strength of the random motion
+float centerPullStrength;
+float time;
+float gravityPullStrength;
+float constrainSphere; 
+float windStrength;
+
+float nrand(float2 uv) {
+    //Function for pseudo-random
+    return frac(sin(dot(uv, float2(23.44445f, 99.12344f))) * 44443.1123f);
+}
+
+
+[numthreads(256,1,1)]
+void DLASolver (uint3 id : SV_DispatchThreadID)
+{
+    float3 gravity = float3(0, 1, 0);
+    float3 wind = float3(1, 0, 0);
+    if (particleBuffer[id.x].sign>0) {
+        //Update position based on random motion;
+
+        float3 ranvel = float3(0.5f - nrand(id.xy+time), 0.5f - nrand(id.xy+2344 + time), 0.5f - nrand(id.xy+11451 + time));
+        particleBuffer[id.x].position += normalize(ranvel) * randomStrength;
+
+        float minD = 100000;
+        uint index = 0;
+        for (uint i = 0; i < 256*512; i++) {
+            if (particleBuffer[i].sign<0) {
+                //If particle sign is false it is a static particle
+
+                float dist = distance(particleBuffer[id.x].position, particleBuffer[i].position);
+                if (minD > dist) {
+                    minD = dist;
+                    index = i;
+                }
+                float lensquared = particleBuffer[id.x].position.x * particleBuffer[id.x].position.x + particleBuffer[id.x].position.y * particleBuffer[id.x].position.y + particleBuffer[id.x].position.z * particleBuffer[id.x].position.z;
+                if (minD < particleBuffer[id.x].radius/2 &&  lensquared  <= constrainSphere) {
+                    particleBuffer[id.x].sign = -1;
+                }
+            }
+        }
+        if (particleBuffer[id.x].sign>0) {
+            float3 attractiveForce = particleBuffer[id.x].position - particleBuffer[index].position;
+            attractiveForce = normalize(attractiveForce);
+            particleBuffer[id.x].position += -attractiveForce * pullStrength;
+            particleBuffer[id.x].position += -gravity * gravityPullStrength +wind*windStrength;
+
+            particleBuffer[id.x].position += -normalize(particleBuffer[id.x].position) * centerPullStrength;
+        }
+
+
+    }
+}
